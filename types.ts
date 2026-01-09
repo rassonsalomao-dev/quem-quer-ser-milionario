@@ -40,3 +40,10 @@ export interface PrizeLevel {
   amount: string;
   isSafety: boolean;
 }
+
+export interface UserStats {
+  totalCorrectAnswers: number;
+  bestScore: number;
+  totalGamesPlayed: number;
+  totalGamesWon: number;
+}

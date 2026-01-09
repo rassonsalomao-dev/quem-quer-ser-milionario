@@ -1,12 +1,14 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { GameState, Difficulty, QuizQuestion } from './types';
+import { GameState, Difficulty, QuizQuestion, UserStats } from './types';
 import { GET_DIFFICULTY, PRIZE_LADDER } from './constants';
 import { fetchQuizQuestion, getLifelineHelp } from './services/geminiService';
 import PrizeLadder from './components/PrizeLadder';
 import Lifelines from './components/Lifelines';
 import QuestionBox from './components/QuestionBox';
 import GameOver from './components/GameOver';
+
+const STORAGE_KEY = 'mz_millionaire_stats';
 
 const App: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>({
@@ -26,9 +28,33 @@ const App: React.FC = () => {
     lastResult: null,
   });
 
+  const [stats, setStats] = useState<UserStats>({
+    totalCorrectAnswers: 0,
+    bestScore: 0,
+    totalGamesPlayed: 0,
+    totalGamesWon: 0
+  });
+
   const [askedQuestions, setAskedQuestions] = useState<string[]>([]);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [lifelineFeedback, setLifelineFeedback] = useState<string | null>(null);
+
+  // Load stats from localStorage
+  useEffect(() => {
+    const savedStats = localStorage.getItem(STORAGE_KEY);
+    if (savedStats) {
+      try {
+        setStats(JSON.parse(savedStats));
+      } catch (e) {
+        console.error("Erro ao carregar estatísticas", e);
+      }
+    }
+  }, []);
+
+  const saveStats = (newStats: UserStats) => {
+    setStats(newStats);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(newStats));
+  };
 
   const loadQuestion = useCallback(async (index: number) => {
     setGameState(prev => ({ ...prev, loading: true, error: null, hiddenOptions: [], lastResult: null }));
@@ -50,6 +76,20 @@ const App: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const updateFinalStats = (finalState: Partial<GameState>) => {
+    const isWin = finalState.hasWon || false;
+    const finalScore = finalState.score || 0;
+    
+    const newStats: UserStats = {
+      totalGamesPlayed: stats.totalGamesPlayed + 1,
+      totalGamesWon: stats.totalGamesWon + (isWin ? 1 : 0),
+      totalCorrectAnswers: stats.totalCorrectAnswers + finalScore,
+      bestScore: Math.max(stats.bestScore, finalScore)
+    };
+    
+    saveStats(newStats);
+  };
+
   const handleAnswer = (key: string) => {
     if (!gameState.currentQuestion || gameState.lastResult) return;
     
@@ -64,7 +104,9 @@ const App: React.FC = () => {
         
         setTimeout(() => {
           if (gameState.currentQuestionIndex === 14) {
-            setGameState(prev => ({ ...prev, isGameOver: true, hasWon: true, score: 15 }));
+            const finalState = { ...gameState, isGameOver: true, hasWon: true, score: 15 };
+            setGameState(finalState);
+            updateFinalStats(finalState);
           } else {
             const nextIndex = gameState.currentQuestionIndex + 1;
             setGameState(prev => ({ 
@@ -76,7 +118,9 @@ const App: React.FC = () => {
           }
         }, 2000);
       } else {
-        setGameState(prev => ({ ...prev, lastResult: 'wrong', isGameOver: true }));
+        const finalState = { ...gameState, lastResult: 'wrong', isGameOver: true };
+        setGameState(finalState);
+        updateFinalStats(finalState);
       }
     }, 1500);
   };
@@ -139,18 +183,18 @@ const App: React.FC = () => {
       {/* Header */}
       <header className="w-full max-w-6xl flex justify-between items-center mb-8 border-b border-blue-900/50 pb-4 z-10">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 bg-yellow-500 rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(234,179,8,0.4)]">
-            <i className="fa-solid fa-star text-slate-900 text-xl"></i>
+          <div className="w-10 h-10 md:w-12 md:h-12 bg-yellow-500 rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(234,179,8,0.4)]">
+            <i className="fa-solid fa-star text-slate-900 text-lg md:text-xl"></i>
           </div>
           <div>
-            <h1 className="text-xl md:text-2xl font-black text-white leading-tight">QUEM QUER SER MILIONÁRIO</h1>
-            <p className="text-yellow-500 text-xs font-bold tracking-[0.2em]">EDIÇÃO MOÇAMBIQUE</p>
+            <h1 className="text-lg md:text-2xl font-black text-white leading-tight">QUEM QUER SER MILIONÁRIO</h1>
+            <p className="text-yellow-500 text-[10px] md:text-xs font-bold tracking-[0.2em]">EDIÇÃO MOÇAMBIQUE</p>
           </div>
         </div>
 
-        <div className="bg-slate-900/80 px-4 py-2 rounded-full border border-blue-500/30 flex items-center gap-2">
-          <span className="text-blue-400 text-xs font-bold">PRÉMIO ATUAL:</span>
-          <span className="text-yellow-500 font-black">{currentPrize}</span>
+        <div className="bg-slate-900/80 px-3 md:px-4 py-1 md:py-2 rounded-full border border-blue-500/30 flex items-center gap-2">
+          <span className="text-blue-400 text-[10px] md:text-xs font-bold hidden sm:inline">PRÉMIO ATUAL:</span>
+          <span className="text-yellow-500 font-black text-sm md:text-base">{currentPrize}</span>
         </div>
       </header>
 
@@ -217,12 +261,18 @@ const App: React.FC = () => {
           hasWon={gameState.hasWon} 
           onRestart={restartGame}
           explanation={gameState.lastResult === 'wrong' ? gameState.currentQuestion?.explicacao : undefined}
+          stats={stats}
         />
       )}
 
       {/* Mobile Footer ladder hint */}
       <div className="mt-8 md:hidden text-center">
-        <p className="text-blue-500 text-xs font-bold">PERGUNTA {gameState.currentQuestionIndex + 1} DE 15</p>
+        <p className="text-blue-500 text-[10px] font-bold">PERGUNTA {gameState.currentQuestionIndex + 1} DE 15</p>
+        <div className="flex gap-1 justify-center mt-2">
+           {[...Array(15)].map((_, i) => (
+             <div key={i} className={`h-1 w-4 rounded-full ${i <= gameState.currentQuestionIndex ? 'bg-yellow-500' : 'bg-slate-800'}`}></div>
+           ))}
+        </div>
       </div>
     </div>
   );
